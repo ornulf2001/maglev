@@ -26,6 +26,11 @@ u_value = 0
 # Define dynamic equations (spring-mass-damper, right side of equation using Newton's laws)
 model.set_rhs('theta', omega)
 model.set_rhs("omega", -k/m*theta - d/m*omega + u/m)
+
+
+# Define measurement model
+model.set_meas("theta_meas", theta)
+model.set_meas("omega_meas", omega) 
 model.setup()
 
 ######################## MHE Setup ##############################
@@ -34,9 +39,13 @@ mhe = do_mpc.estimator.MHE(model)
 N = 1000
 dt = 0.1
 
-mhe.set_param(n_horizon=N)
-mhe.set_param(t_step=dt)
-mhe.set_param(store_full_solution=True)  # Store full solution history
+mhe.settings.n_horizon=N
+mhe.settings.t_step=dt
+mhe.settings.check_for_mandatory_settings()
+
+#mhe.set_param(n_horizon=N)
+#mhe.set_param(t_step=dt)
+#mhe.set_param(store_full_solution=True)  # Store full solution history
 
 # Set weight matrices
 P_x = np.eye(2)
@@ -44,7 +53,6 @@ P_v = np.eye(2)
 P_p = np.eye(0)
 
 mhe.set_default_objective(P_x, P_v, P_p)
-
 
 
 ###################### Measurement Setup ################################
@@ -57,7 +65,7 @@ theta_meas = data.iloc[:, 1].values  # Measured rotation angle from offline data
 
 # Define the measurement function
 def measurement_function(x):
-    return   # Measurement is just the rotation angle (first state)
+    return  x # Measurement is just the rotation angle (first state)
 
 # Set the measurement function
 mhe.set_y_fun(measurement_function)
