@@ -1,9 +1,17 @@
+# Written by Ørnulf Damsgaard, NTNU - ITK
+
+
+#Changelog:
+#18:22 - 21.10.2024 - This still doesnt work. I have no idea how the measurement function is supposed to be implemented.
+#                     It gets treaded as an int for some reason, which causes problems. idk what data type its supposed to be
+
 import do_mpc
 from casadi import *
 import numpy as np
 import pandas as pd
 import os
-import matplotlib.pyplot as plt  # Fix: matplotlib import corrected
+import matplotlib.pyplot as plt  
+
 
 ####################### Model Setup #############################
 
