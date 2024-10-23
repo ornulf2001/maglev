@@ -28,6 +28,7 @@ omega = model.set_variable("_x", "omega")
 k_param = model.set_variable("parameter", "k_param")
 m_param = model.set_variable("parameter", "m_param")
 d_param = model.set_variable("parameter", "d_param")
+deg_offset = model.set_variable("parameter","deg_offset")
 
 # Define input
 #u = model.set_variable("_u", "u")
@@ -39,11 +40,12 @@ model.set_rhs("omega", -k_param/m_param*theta - d_param/m_param*omega, process_n
 
 
 # Define measurement model
-model.set_meas("theta_meas", theta, meas_noise=True)
+# NOW ESTIMATED: deg_offset = 50 # The point around which the system oscillates, i.e. now the system oscillates around 50 deg rotation instead of around 0
+model.set_meas("theta_meas", theta - deg_offset, meas_noise=True)
 model.setup()
 
 ######################## MHE Setup ##############################
-mhe = do_mpc.estimator.MHE(model,["k_param","m_param","d_param"])
+mhe = do_mpc.estimator.MHE(model,["k_param","m_param","d_param", "deg_offset"])
 
 N = 10
 dt = 0.1
@@ -59,7 +61,7 @@ mhe.settings.check_for_mandatory_settings()
 
 # Set weight matrices
 P_x = 20*np.eye(2)
-P_p = 20*np.eye(3)
+P_p = 20*np.eye(4)
 P_v=20*np.diag(np.array([1]))
 P_w=20*np.diag(np.array([1,1]))
 
@@ -108,16 +110,15 @@ mhe.x0 = x0_mhe
 mhe.p_est0["k_param"] = 13
 mhe.p_est0["m_param"] = 0.2
 mhe.p_est0["d_param"] = 0.0002
+mhe.p_est0["deg_offset"] = 50
 mhe.set_initial_guess()
 
 # Pass measurements into the MHE estimator
-y_meas_list = [] # for plotting gt
 for t, theta in zip(time, theta_meas):
     y_meas = np.array([[theta]])
-    y_meas_list.append(theta)
-    #v0 = 0*np.random.randn(model.n_v,1) # measurement noise
-    #y0 = simulator.make_step(v0=v0) #Run simulator
-    mhe.make_step(y_meas)  # Feed measurements into MHE
+    v0 = 0*np.random.randn(model.n_v,1) # measurement noise
+    y0 = simulator.make_step(v0=v0)
+    x0 = mhe.make_step(y_meas)  # Feed measurements into MHE
 #steps = N - 1
 
 # Simulate the system over time
@@ -128,34 +129,31 @@ for t, theta in zip(time, theta_meas):
 
 
 
-print(len(mhe.data["_x"]))
-print(len(y_meas_list))
+print(simulator.data["_x"])
 
 mhe_graphics = do_mpc.graphics.Graphics(mhe.data)
-#sim_graphics = do_mpc.graphics.Graphics(simulator.data)
+sim_graphics = do_mpc.graphics.Graphics(simulator.data)
 
 fig, ax = plt.subplots(2, sharex=True, figsize=(8,4))
 fig.align_ylabels()
 
 fig_p, ax_p = plt.subplots(3, figsize=(8,2))
 
-
-#sim_graphics.add_line(var_type='_x', var_name='theta', axis=ax[0], label='Simulated theta')
-ax[0].plot(time[:len(y_meas_list)], y_meas_list, label='gt', linestyle='--', color='green')
+sim_graphics.add_line(var_type='_x', var_name='theta', axis=ax[0], label='Simulated theta')
 mhe_graphics.add_line(var_type='_x', var_name='theta', axis=ax[0], label='MHE estimated theta')
 
-#sim_graphics.add_line(var_type='_x', var_name='omega', axis=ax[1], label='Simulated omega')
+sim_graphics.add_line(var_type='_x', var_name='omega', axis=ax[1], label='Simulated omega')
 mhe_graphics.add_line(var_type='_x', var_name='omega', axis=ax[1], label='MHE estimated omega')
 
 #sim_graphics.add_line(var_type='_u', var_name='u', axis=ax[2], label='Simulated u')
 #mhe_graphics.add_line(var_type='_u', var_name='u', axis=ax[2], label='MHE estimated u')
 
 # Parameter plot (alpha)
-#sim_graphics.add_line(var_type='_p', var_name='k_param', axis=ax_p[0], label='Simulated k')
+sim_graphics.add_line(var_type='_p', var_name='k_param', axis=ax_p[0], label='Simulated k')
 mhe_graphics.add_line(var_type='_p', var_name='k_param', axis=ax_p[0], label='MHE estimated k')
-#sim_graphics.add_line(var_type='_p', var_name='m_param', axis=ax_p[1], label='Simulated m')
+sim_graphics.add_line(var_type='_p', var_name='m_param', axis=ax_p[1], label='Simulated m')
 mhe_graphics.add_line(var_type='_p', var_name='m_param', axis=ax_p[1], label='MHE estimated m')
-#sim_graphics.add_line(var_type='_p', var_name='d_param', axis=ax_p[2], label='Simulated d')
+sim_graphics.add_line(var_type='_p', var_name='d_param', axis=ax_p[2], label='Simulated d')
 mhe_graphics.add_line(var_type='_p', var_name='d_param', axis=ax_p[2], label='MHE estimated d')
 
 
@@ -165,18 +163,18 @@ ax[1].set_ylabel("omega")
 #ax[2].set_ylabel("motor [?]")
 ax[1].set_xlabel('time [s]')
 
-#for line_i in sim_graphics.result_lines.full:
-#    line_i.set_alpha(0.8)
-#    line_i.set_linewidth(1)
+for line_i in sim_graphics.result_lines.full:
+    line_i.set_alpha(0.8)
+    line_i.set_linewidth(1)
 
 lines_labels = [ax[0].get_legend_handles_labels(), ax[1].get_legend_handles_labels()]#,ax[2].get_legend_handles_labels()]
 lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
 
 # Adjust the legend for both plots
-combined_labels = ['gt', 'MHE Estimated']
+combined_labels = ['Simulated', 'MHE Estimated']
 fig.legend(lines[:2], combined_labels, loc='upper center', ncol=2)
 if len(simulator.data['_x']) > 0 and len(mhe.data['_x']) > 0:
-#    sim_graphics.plot_results()
+    sim_graphics.plot_results()
     mhe_graphics.plot_results()
 else:
     print("No data available to plot.")
@@ -190,3 +188,72 @@ ax[1].axvline(mhe.settings.t_step * mhe.settings.n_horizon)
 # Show the figure:
 plt.show(block=True)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def plot():
+    ######################### Plotting the estimates #######################
+    theta_estimates = []
+    omega_estimates = []
+
+    for i in range(steps):
+        estimate = mhe.data.get_estimate()  # Get the current state estimate
+        theta_estimates.append(estimate[0])  # First state: theta (rotation angle)
+        omega_estimates.append(estimate[1])  # Second state: omega (angular velocity)
+
+    plt.figure(figsize=(10, 5))
+
+    # Plot estimated rotation angle (theta)
+    plt.subplot(2, 1, 1)
+    plt.plot(time, theta_estimates, label='Estimated Theta (Rotation Angle)')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Theta [rad]')
+    plt.legend()
+
+    # Plot estimated angular velocity (omega)
+    plt.subplot(2, 1, 2)
+    plt.plot(time, omega_estimates, label='Estimated Omega (Angular Velocity)', color='orange')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Omega [rad/s]')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()

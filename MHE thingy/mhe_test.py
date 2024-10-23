@@ -18,28 +18,36 @@ motor_meas = model.set_meas("motor_meas", motor, meas_noise=True)
 model.set_rhs("x",alpha*x+motor, process_noise=True)                                       # \dot{x} = \alpha*x
 model.setup()
 
-mhe = do_mpc.estimator.MHE(model, ['alpha'])
+mhe = do_mpc.estimator.MHE(model)#, ['alpha'])
 
 setup_mhe={
     "t_step": 0.1,
-    "n_horizon": 15,
+    "n_horizon": 10,
     "store_full_solution":True,
     "meas_from_data":True
 }
 mhe.set_param(**setup_mhe)
 
-P_x=np.eye(1)
-P_p=0.01*np.eye(1)
-P_v=np.diag(np.array([1,1]))
-P_w=np.diag(np.array([1]))
+P_x=4*np.eye(1)
+P_p=1*np.eye(0)
+P_v=10*np.diag(np.array([1,1]))
+P_w = 10*np.array([[1]])
+#P_w=1*np.diag(np.array([1]))
 mhe.set_default_objective(P_x,P_v,P_p,P_w)
+
+p_template_mhe = mhe.get_p_template()
+def p_fun_mhe(t_now):
+    p_template_mhe['alpha'] = -0.02
+    return p_template_mhe
+mhe.set_p_fun(p_fun_mhe)
+
 mhe.setup()
 
 simulator = do_mpc.simulator.Simulator(model)
 simulator.set_param(t_step = 0.1)
 p_template_sim = simulator.get_p_template()
 def p_fun_sim(t_now):
-    p_template_sim['alpha'] = -2.25e-2
+    p_template_sim['alpha'] = -0.02
     return p_template_sim
 simulator.set_p_fun(p_fun_sim)
 simulator.setup()
@@ -49,14 +57,14 @@ x0_mhe=x0*(1+0.2*np.random.randn(1,1))
 
 simulator.x0=x0
 mhe.x0 = x0_mhe
-mhe.p_est0 = -0.02
+#mhe.p_est0 = -0.02
 mhe.set_initial_guess()
 
 
 def random_u(u0):
     # Hold the current value with 80% chance or switch to new random value.
     u_next = (0.5-np.random.rand(1,1))*np.pi # New candidate value.
-    switch = np.random.rand() >= 0.8 # switching? 0 or 1.
+    switch = np.random.rand() >= 0.5 # switching? 0 or 1.
     u0 = (1-switch)*u0 + switch*u_next # Old or new value.
     return u0
 
@@ -70,14 +78,15 @@ for i in range(50):
     x0 = mhe.make_step(y0) # MHE estimation step
 
 
+print(simulator.data["_x"])
 
 mhe_graphics = do_mpc.graphics.Graphics(mhe.data)
 sim_graphics = do_mpc.graphics.Graphics(simulator.data)
 
-fig, ax = plt.subplots(2, sharex=True, figsize=(8,4))
+fig, ax = plt.subplots(3, sharex=True, figsize=(9,5))
 fig.align_ylabels()
 
-fig_p, ax_p = plt.subplots(1, figsize=(8,2))
+#fig_p, ax_p = plt.subplots(1, figsize=(8,2))
 
 sim_graphics.add_line(var_type='_x', var_name='x', axis=ax[0], label='Simulated x')
 mhe_graphics.add_line(var_type='_x', var_name='x', axis=ax[0], label='MHE estimated x')
@@ -86,19 +95,20 @@ sim_graphics.add_line(var_type='_u', var_name='motor', axis=ax[1], label='Simula
 mhe_graphics.add_line(var_type='_u', var_name='motor', axis=ax[1], label='MHE estimated motor')
 
 # Parameter plot (alpha)
-sim_graphics.add_line(var_type='_p', var_name='alpha', axis=ax_p, label='Simulated alpha')
-mhe_graphics.add_line(var_type='_p', var_name='alpha', axis=ax_p, label='MHE estimated alpha')
+sim_graphics.add_line(var_type='_p', var_name='alpha', axis=ax[2], label='Simulated alpha')
+mhe_graphics.add_line(var_type='_p', var_name='alpha', axis=ax[2], label='MHE estimated alpha')
 
 ax[0].set_ylabel('pos [m]')
 ax[1].set_ylabel("motor [?]")
-ax[1].set_xlabel('time [s]')
+ax[2].set_ylabel("alpha")
+ax[2].set_xlabel('time [s]')
 
-sim_graphics.result_lines['_x', 'x', 0]
+#sim_graphics.result_lines['_x', 'x', 0]
 for line_i in sim_graphics.result_lines.full:
     line_i.set_alpha(0.4)
     line_i.set_linewidth(6)
 
-lines_labels = [ax[0].get_legend_handles_labels(), ax[1].get_legend_handles_labels()]
+lines_labels = [ax[0].get_legend_handles_labels(), ax[1].get_legend_handles_labels(), ax[2].get_legend_handles_labels()]
 lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
 
 # Adjust the legend for both plots
