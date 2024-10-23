@@ -2,11 +2,9 @@
 #include <Wire.h>
 
 // IIR filter constants
-#define ALPHA 0.06  // 0.6, 0.1
-#define DALPHA 0.03 //0.03, 0.02
+#define ALPHA 0.2  // 0.6, 0.1
+#define DALPHA 0.05 //0.03, 0.02
 
-// LP filter
-const float alpha = 0.1; // Smoothing factor (adjust as needed)
 
 // Sample timer
 const double f_s = 5000; // Hz
@@ -66,11 +64,12 @@ double dbx_prev = 0, dby_prev = 0, dbz_prev = 0;
 float meanBx = 0, meanBy = 0, meanBz = 0;
 
 // Bias
-float biasX = 0.121;
-float biasY = 0.095;
+float biasX = 0.11  , biasUX = 0.87;
+float biasY = 0.085 , biasUY = 0.82;
+
 
 // PID
-double Kp = 800, Kd = 4; // 450,2 value for the double magnets, maybe not the best but it's stabilise, (800,2.6)
+double Kp = 900, Kd = 4; // 450,2 value for the double magnets, maybe not the best but it's stabilise, (800,2.6)
 double ux = 0, uy = 0;
 double ex = 0, ey = 0;
 double dex = 0, dey = 0;
@@ -206,8 +205,8 @@ void loop() {
       // Get measurement  
       PCA9548A(Wire, 0);    
       Sensor.updateData();
-      rawBx = Sensor.getX() - meanBx - 0.87/255*ux + biasX; // 0.08393; // 0.25 value for the double magnet, just guess the value but don't know what is the bias is Compensate for bias by permanent and electromagnets
-      rawBy = Sensor.getY() - meanBy - 0.82/255*uy + biasY; //0.0872; //0.125, 0.08/0.09, (x0.08393, y0.0872)
+      rawBx = Sensor.getX() - meanBx - biasUX/255*ux + biasX; // 0.08393; // 0.25 value for the double magnet, just guess the value but don't know what is the bias is Compensate for bias by permanent and electromagnets
+      rawBy = Sensor.getY() - meanBy - biasUY/255*uy + biasY; //0.0872; //0.125, 0.08/0.09, (x0.08393, y0.0872)
       rawBz = Sensor.getZ() - meanBz;
 
       bx = ALPHA * rawBx + (1.0 - ALPHA) * bx_prev;

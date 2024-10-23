@@ -58,10 +58,10 @@ mhe.settings.check_for_mandatory_settings()
 #mhe.set_param(store_full_solution=True)  # Store full solution history
 
 # Set weight matrices
-P_x = 20*np.eye(2)
-P_p = 20*np.eye(3)
-P_v=20*np.diag(np.array([1]))
-P_w=20*np.diag(np.array([1,1]))
+P_x = 10*np.eye(2)
+P_p = 10*np.eye(3)
+P_v=10*np.diag(np.array([1]))
+P_w=10*np.diag(np.array([1,1]))
 
 mhe.set_default_objective(P_x,P_v,P_p,P_w)
 mhe.setup()
