@@ -6,6 +6,8 @@
 #                     It gets treaded as an int for some reason, which causes problems. idk what data type its supposed to be
 
 #16:20 - 22.10.2024 - Still doesnt work, but i have learned some new stuff using another example. Trying to implement
+#19:10 - 24.10.2024 - Something is working here now. Weird behaviour from omega when i bound the parameters. Unbounded 
+#                     parameters give ok omega estimate but sinusoidal parameters (also negative)
 import do_mpc
 from casadi import *
 import numpy as np
@@ -25,9 +27,9 @@ model = do_mpc.model.Model(model_type)
 # Define state variables
 theta = model.set_variable("_x", "theta")
 omega = model.set_variable("_x", "omega")
-k_param = model.set_variable("parameter", "k_param")
-m_param = model.set_variable("parameter", "m_param")
-d_param = model.set_variable("parameter", "d_param")
+k_param = model.set_variable("_p", "k_param")
+m_param = model.set_variable("_p", "m_param")
+d_param = model.set_variable("_p", "d_param")
 
 # Define input
 #u = model.set_variable("_u", "u")
@@ -45,7 +47,7 @@ model.setup()
 ######################## MHE Setup ##############################
 mhe = do_mpc.estimator.MHE(model,["k_param","m_param","d_param"])
 
-N = 10
+N = 15
 dt = 0.1
 
 mhe.settings.n_horizon=N
@@ -58,12 +60,18 @@ mhe.settings.check_for_mandatory_settings()
 #mhe.set_param(store_full_solution=True)  # Store full solution history
 
 # Set weight matrices
-P_x = 10*np.eye(2)
-P_p = 10*np.eye(3)
-P_v=10*np.diag(np.array([1]))
-P_w=10*np.diag(np.array([1,1]))
-
+P_x = 5*np.eye(2)
+P_p = 1*np.eye(3)
+P_v=np.diag(np.array([0.1]))
+P_w=np.diag(np.array([1,4]))
 mhe.set_default_objective(P_x,P_v,P_p,P_w)
+
+mhe.bounds["lower","_x","omega"]=-200
+mhe.bounds["upper","_x","omega"]=200
+mhe.bounds["lower","_p_est","k_param"]=0
+mhe.bounds["lower","_p_est","m_param"]=0.1
+mhe.bounds["upper","_p_est","m_param"]=0.4
+mhe.bounds["lower","_p_est","d_param"]=0
 mhe.setup()
 
 
@@ -72,7 +80,7 @@ dirname = os.path.dirname(__file__)
 filename = os.path.join(dirname, 'measured_rotation.csv')
 data = pd.read_csv(filename)
 n_data = len(data)
-used_data_ratio = 0.1
+used_data_ratio = 0.2
 time = data.iloc[:int(n_data*used_data_ratio), 0].values  # Time steps
 theta_meas = data.iloc[:int(n_data*used_data_ratio), 1].values  # Measured rotation angle from offline dataset
 
@@ -100,7 +108,7 @@ simulator.set_p_fun(p_fun_sim)
 simulator.setup()
 
 #Initial guess
-x0=np.array([[70],[10]])
+x0=np.array([[70],[-2.4]])
 x0_mhe=x0*(1+0.2*np.random.randn(1,1))
 
 simulator.x0=x0
@@ -131,8 +139,20 @@ for t, theta in zip(time, theta_meas):
 print(len(mhe.data["_x"]))
 print(len(y_meas_list))
 
+data_x = pd.DataFrame(mhe.data["_x"])
+data_x["y"] = y_meas_list
+data_x["k"] = mhe.data["_p"][:,0]
+data_x["m"] = mhe.data["_p"][:,1]
+data_x["d"] = mhe.data["_p"][:,2]
+
+
+
+#Save the DataFrame to a CSV file
+data_x.to_csv("mhe_states.csv", index=False)
+
 mhe_graphics = do_mpc.graphics.Graphics(mhe.data)
 #sim_graphics = do_mpc.graphics.Graphics(simulator.data)
+
 
 fig, ax = plt.subplots(2, sharex=True, figsize=(8,4))
 fig.align_ylabels()
@@ -141,28 +161,27 @@ fig_p, ax_p = plt.subplots(3, figsize=(8,2))
 
 
 #sim_graphics.add_line(var_type='_x', var_name='theta', axis=ax[0], label='Simulated theta')
-ax[0].plot(time[:len(y_meas_list)], y_meas_list, label='gt', linestyle='--', color='green')
-mhe_graphics.add_line(var_type='_x', var_name='theta', axis=ax[0], label='MHE estimated theta')
+ax[0].plot(mhe.data["_time"], y_meas_list, label='gt', linestyle='--', color='green')
+mhe_graphics.add_line(var_type='_x', var_name='theta', axis=ax[0], label='MHE estimated theta', color="red")
 
 #sim_graphics.add_line(var_type='_x', var_name='omega', axis=ax[1], label='Simulated omega')
-mhe_graphics.add_line(var_type='_x', var_name='omega', axis=ax[1], label='MHE estimated omega')
+mhe_graphics.add_line(var_type='_x', var_name='omega', axis=ax[1], label='MHE estimated omega',color="orange")
 
 #sim_graphics.add_line(var_type='_u', var_name='u', axis=ax[2], label='Simulated u')
 #mhe_graphics.add_line(var_type='_u', var_name='u', axis=ax[2], label='MHE estimated u')
 
 # Parameter plot (alpha)
 #sim_graphics.add_line(var_type='_p', var_name='k_param', axis=ax_p[0], label='Simulated k')
-mhe_graphics.add_line(var_type='_p', var_name='k_param', axis=ax_p[0], label='MHE estimated k')
+mhe_graphics.add_line(var_type='_p', var_name='k_param', axis=ax_p[0], label='MHE estimated k', color="red")
 #sim_graphics.add_line(var_type='_p', var_name='m_param', axis=ax_p[1], label='Simulated m')
-mhe_graphics.add_line(var_type='_p', var_name='m_param', axis=ax_p[1], label='MHE estimated m')
+mhe_graphics.add_line(var_type='_p', var_name='m_param', axis=ax_p[1], label='MHE estimated m', color="yellow")
 #sim_graphics.add_line(var_type='_p', var_name='d_param', axis=ax_p[2], label='Simulated d')
-mhe_graphics.add_line(var_type='_p', var_name='d_param', axis=ax_p[2], label='MHE estimated d')
+mhe_graphics.add_line(var_type='_p', var_name='d_param', axis=ax_p[2], label='MHE estimated d',color ="pink")
 
 
 
-ax[0].set_ylabel('theta')
+ax[0].set_ylabel("theta")
 ax[1].set_ylabel("omega")
-#ax[2].set_ylabel("motor [?]")
 ax[1].set_xlabel('time [s]')
 
 #for line_i in sim_graphics.result_lines.full:
@@ -173,8 +192,16 @@ lines_labels = [ax[0].get_legend_handles_labels(), ax[1].get_legend_handles_labe
 lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
 
 # Adjust the legend for both plots
-combined_labels = ['gt', 'MHE Estimated']
-fig.legend(lines[:2], combined_labels, loc='upper center', ncol=2)
+combined_labels = ['gt', 'MHE Est. Theta', "MHE Est. Omega"]
+fig.legend(lines[:3], combined_labels, loc='upper center', ncol=2)
+
+lines_labels_p = [ax_p[0].get_legend_handles_labels(), ax_p[1].get_legend_handles_labels(),ax_p[2].get_legend_handles_labels()]
+lines_p, labels_p = [sum(lol, []) for lol in zip(*lines_labels_p)]
+
+# Adjust the legend for both plots
+combined_labels_p = ['k', 'm',"d"]
+fig_p.legend(lines_p[:3], combined_labels_p, loc='upper center', ncol=3)
+
 if len(simulator.data['_x']) > 0 and len(mhe.data['_x']) > 0:
 #    sim_graphics.plot_results()
     mhe_graphics.plot_results()
@@ -188,5 +215,4 @@ ax[0].axvline(mhe.settings.t_step * mhe.settings.n_horizon)
 ax[1].axvline(mhe.settings.t_step * mhe.settings.n_horizon)
 
 # Show the figure:
-plt.show(block=True)
-
+plt.show()
