@@ -8,6 +8,10 @@
 #16:20 - 22.10.2024 - Still doesnt work, but i have learned some new stuff using another example. Trying to implement
 #19:10 - 24.10.2024 - Something is working here now. Weird behaviour from omega when i bound the parameters. Unbounded 
 #                     parameters give ok omega estimate but sinusoidal parameters (also negative)
+#17:51 - 05.11.2024 - I tried disabling the estimation of msd parameters, and instead setting them to fixed values. Added offset for theta to 
+#                     match oscillations better with measurements. Also disabled some simulation stuff that isnt needed, and disabled plots 
+#                     for parameters. Also cleaned up comments and unused code.
+
 import do_mpc
 from casadi import *
 import numpy as np
@@ -17,197 +21,115 @@ import matplotlib.pyplot as plt
 
 
 ####################### Model Setup #############################
-
 model_type = "continuous"
 model = do_mpc.model.Model(model_type)
-
-# Define model parameters (for spring-mass-damper)
-
 
 # Define state variables
 theta = model.set_variable("_x", "theta")
 omega = model.set_variable("_x", "omega")
-k_param = model.set_variable("_p", "k_param")
-m_param = model.set_variable("_p", "m_param")
-d_param = model.set_variable("_p", "d_param")
 
-# Define input
-#u = model.set_variable("_u", "u")
-#u_value = 0
+# Param values that work good: [k,m,d] = [1.4, 1, 0.005]
+k_param = 1.4
+m_param = 1
+d_param = 0.005
+offset=54 # theta offset to match oscillations to data
 
-# Define dynamic equations (spring-mass-damper, right side of equation using Newton's laws)
+# Define dynamic equations (mass-spring-damper, right side of equation using Newton's laws)
 model.set_rhs('theta', omega, process_noise=True)
-model.set_rhs("omega", -k_param/m_param*theta - d_param/m_param*omega, process_noise=True)
+model.set_rhs("omega", -k_param/m_param*(theta-offset) - d_param/m_param*omega, process_noise=True)
 
 
-# Define measurement model
+# Define measurement model, measure only position
 model.set_meas("theta_meas", theta, meas_noise=True)
 model.setup()
 
-######################## MHE Setup ##############################
-mhe = do_mpc.estimator.MHE(model,["k_param","m_param","d_param"])
 
+
+######################## MHE Setup ##############################
+mhe = do_mpc.estimator.MHE(model)   #,["k_param","m_param","d_param"])
 N = 15
 dt = 0.1
 
+#MHE settings
 mhe.settings.n_horizon=N
 mhe.settings.t_step=dt
 mhe.settings.meas_from_data=True
 mhe.settings.check_for_mandatory_settings()
 
-#mhe.set_param(n_horizon=N)
-#mhe.set_param(t_step=dt)
-#mhe.set_param(store_full_solution=True)  # Store full solution history
-
 # Set weight matrices
-P_x = 5*np.eye(2)
-P_p = 1*np.eye(3)
-P_v=np.diag(np.array([0.1]))
-P_w=np.diag(np.array([1,4]))
+P_x = 20*np.eye(2)
+P_p = None # No parameter estimation so no need for weights on them
+P_v=np.array([[10]])
+P_w=np.diag(np.array([1,10]))
 mhe.set_default_objective(P_x,P_v,P_p,P_w)
 
+# Below are weights that have worked ok before (Px, Pp, Pv, Pw)
+#   [PARAMS ESTIMATED] These weights give ok theta and kinda ok omega, but messy parameters when unbounded: (10, 5, 5, [10,50])
+#   [PARAMS ESTIMATED] With bounded parameters, these values give ok theta but spikey omega, also unrealistic periodic parameter spikes: (5, 5, 1, [10,50])
+#   [PARAMS FIXED] These look good, maybe need more fine tuning of k and d to match amplitude and decay: (20, None, 10, [1,10])
+
+# MHE Bounds
 mhe.bounds["lower","_x","omega"]=-200
 mhe.bounds["upper","_x","omega"]=200
-mhe.bounds["lower","_p_est","k_param"]=0
-mhe.bounds["lower","_p_est","m_param"]=0.1
-mhe.bounds["upper","_p_est","m_param"]=0.4
-mhe.bounds["lower","_p_est","d_param"]=0
 mhe.setup()
 
 
 ###################### Measurement Setup ################################
+#Load data set
 dirname = os.path.dirname(__file__)
-filename = os.path.join(dirname, 'measured_rotation.csv')
+filename = os.path.join(dirname, 'measured_rotation.csv') 
 data = pd.read_csv(filename)
+
 n_data = len(data)
-used_data_ratio = 0.2
+used_data_ratio = 0.3 # Ratio of total dataset used. Can use less data for debugging to reduce computation time
 time = data.iloc[:int(n_data*used_data_ratio), 0].values  # Time steps
 theta_meas = data.iloc[:int(n_data*used_data_ratio), 1].values  # Measured rotation angle from offline dataset
 
-# Define the measurement function
-#def measurement_function(x):
-  #  return  x # Measurement is just the rotation angle (first state)
-
-# Set the measurement function
-#mhe.set_y_fun(measurement_function)
-
-# Now setup the MHE (important to do before the loop)
-
-
-
-########################## Run Simulation  ###########################
-simulator = do_mpc.simulator.Simulator(model)
-simulator.set_param(t_step=dt)
-p_template_sim = simulator.get_p_template()
-def p_fun_sim(t_now):
-    p_template_sim['k_param'] = 15
-    p_template_sim['m_param'] = 0.3
-    p_template_sim['d_param'] = 0.0001
-    return p_template_sim
-simulator.set_p_fun(p_fun_sim)
-simulator.setup()
-
-#Initial guess
+########################## Run MHE  ###########################
+# #Initial guess
 x0=np.array([[70],[-2.4]])
-x0_mhe=x0*(1+0.2*np.random.randn(1,1))
-
-simulator.x0=x0
+x0_mhe=x0*(1+0.02*np.random.randn(1,1))
 mhe.x0 = x0_mhe
-mhe.p_est0["k_param"] = 13
-mhe.p_est0["m_param"] = 0.2
-mhe.p_est0["d_param"] = 0.0002
 mhe.set_initial_guess()
 
 # Pass measurements into the MHE estimator
 y_meas_list = [] # for plotting gt
-for t, theta in zip(time, theta_meas):
+for theta in theta_meas:
     y_meas = np.array([[theta]])
     y_meas_list.append(theta)
-    #v0 = 0*np.random.randn(model.n_v,1) # measurement noise
-    #y0 = simulator.make_step(v0=v0) #Run simulator
     mhe.make_step(y_meas)  # Feed measurements into MHE
-#steps = N - 1
 
-# Simulate the system over time
-#for i in range(steps):
-#    u0 = np.array([u_value]).reshape(1, 1)
-#    simulator.make_step(u0)
-
-
-
-
-print(len(mhe.data["_x"]))
-print(len(y_meas_list))
-
-data_x = pd.DataFrame(mhe.data["_x"])
+#Save the MHE data to a CSV file, Data columns: (0,1,y) = ("Theta est.", "Omega est.", "Thea meas.")
+data_x = pd.DataFrame(mhe.data["_x"]) 
 data_x["y"] = y_meas_list
-data_x["k"] = mhe.data["_p"][:,0]
-data_x["m"] = mhe.data["_p"][:,1]
-data_x["d"] = mhe.data["_p"][:,2]
-
-
-
-#Save the DataFrame to a CSV file
 data_x.to_csv("mhe_states.csv", index=False)
 
+
+
+
+#################### Plotting ############################
 mhe_graphics = do_mpc.graphics.Graphics(mhe.data)
-#sim_graphics = do_mpc.graphics.Graphics(simulator.data)
-
-
 fig, ax = plt.subplots(2, sharex=True, figsize=(8,4))
 fig.align_ylabels()
 
-fig_p, ax_p = plt.subplots(3, figsize=(8,2))
-
-
-#sim_graphics.add_line(var_type='_x', var_name='theta', axis=ax[0], label='Simulated theta')
+#Plotting theta and omega vs time
 ax[0].plot(mhe.data["_time"], y_meas_list, label='gt', linestyle='--', color='green')
 mhe_graphics.add_line(var_type='_x', var_name='theta', axis=ax[0], label='MHE estimated theta', color="red")
-
-#sim_graphics.add_line(var_type='_x', var_name='omega', axis=ax[1], label='Simulated omega')
 mhe_graphics.add_line(var_type='_x', var_name='omega', axis=ax[1], label='MHE estimated omega',color="orange")
 
-#sim_graphics.add_line(var_type='_u', var_name='u', axis=ax[2], label='Simulated u')
-#mhe_graphics.add_line(var_type='_u', var_name='u', axis=ax[2], label='MHE estimated u')
-
-# Parameter plot (alpha)
-#sim_graphics.add_line(var_type='_p', var_name='k_param', axis=ax_p[0], label='Simulated k')
-mhe_graphics.add_line(var_type='_p', var_name='k_param', axis=ax_p[0], label='MHE estimated k', color="red")
-#sim_graphics.add_line(var_type='_p', var_name='m_param', axis=ax_p[1], label='Simulated m')
-mhe_graphics.add_line(var_type='_p', var_name='m_param', axis=ax_p[1], label='MHE estimated m', color="yellow")
-#sim_graphics.add_line(var_type='_p', var_name='d_param', axis=ax_p[2], label='Simulated d')
-mhe_graphics.add_line(var_type='_p', var_name='d_param', axis=ax_p[2], label='MHE estimated d',color ="pink")
-
-
-
+# Adding axis labels
 ax[0].set_ylabel("theta")
 ax[1].set_ylabel("omega")
 ax[1].set_xlabel('time [s]')
 
-#for line_i in sim_graphics.result_lines.full:
-#    line_i.set_alpha(0.8)
-#    line_i.set_linewidth(1)
 
-lines_labels = [ax[0].get_legend_handles_labels(), ax[1].get_legend_handles_labels()]#,ax[2].get_legend_handles_labels()]
+# Adding legends
+lines_labels = [ax[0].get_legend_handles_labels(), ax[1].get_legend_handles_labels()]
 lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
-
-# Adjust the legend for both plots
 combined_labels = ['gt', 'MHE Est. Theta', "MHE Est. Omega"]
 fig.legend(lines[:3], combined_labels, loc='upper center', ncol=2)
 
-lines_labels_p = [ax_p[0].get_legend_handles_labels(), ax_p[1].get_legend_handles_labels(),ax_p[2].get_legend_handles_labels()]
-lines_p, labels_p = [sum(lol, []) for lol in zip(*lines_labels_p)]
-
-# Adjust the legend for both plots
-combined_labels_p = ['k', 'm',"d"]
-fig_p.legend(lines_p[:3], combined_labels_p, loc='upper center', ncol=3)
-
-if len(simulator.data['_x']) > 0 and len(mhe.data['_x']) > 0:
-#    sim_graphics.plot_results()
-    mhe_graphics.plot_results()
-else:
-    print("No data available to plot.")
-# Reset the limits on all axes in graphic to show the data.
+# idk what this does
 mhe_graphics.reset_axes()
 
 # Mark the time after a full horizon is available to the MHE.

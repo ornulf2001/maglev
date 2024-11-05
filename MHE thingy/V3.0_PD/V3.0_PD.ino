@@ -2,8 +2,8 @@
 #include <Wire.h>
 
 // IIR filter constants
-#define ALPHA 0.2  // 0.6, 0.1
-#define DALPHA 0.05 //0.03, 0.02
+#define ALPHA 0.1  // 0.6, 0.1
+#define DALPHA 0.02 //0.03, 0.02
 
 
 // Sample timer
@@ -64,12 +64,12 @@ double dbx_prev = 0, dby_prev = 0, dbz_prev = 0;
 float meanBx = 0, meanBy = 0, meanBz = 0;
 
 // Bias
-float biasX = 0.11  , biasUX = 0.87;
-float biasY = 0.085 , biasUY = 0.82;
+float biasX = 0.08393  , biasUX = 0.76;
+float biasY = 0.0872 , biasUY = 0.82;
 
 
 // PID
-double Kp = 900, Kd = 4; // 450,2 value for the double magnets, maybe not the best but it's stabilise, (800,2.6)
+double Kp = 700, Kd = 5; // 450,2 value for the double magnets, maybe not the best but it's stabilise, (800,2.6)
 double ux = 0, uy = 0;
 double ex = 0, ey = 0;
 double dex = 0, dey = 0;
