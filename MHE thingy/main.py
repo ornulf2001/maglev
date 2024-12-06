@@ -17,9 +17,10 @@ from casadi import *
 import numpy as np
 import pandas as pd
 import os
-import matplotlib.pyplot as plt  
-
-
+import matplotlib.pyplot as plt 
+import seaborn as sns 
+import time
+start_time=time.time()
 ####################### Model Setup #############################
 model_type = "continuous"
 model = do_mpc.model.Model(model_type)
@@ -48,7 +49,7 @@ model.setup()
 ######################## MHE Setup ##############################
 mhe = do_mpc.estimator.MHE(model)   #,["k_param","m_param","d_param"])
 N = 15
-dt = 0.1
+dt = 0.33
 
 #MHE settings
 mhe.settings.n_horizon=N
@@ -57,10 +58,10 @@ mhe.settings.meas_from_data=True
 mhe.settings.check_for_mandatory_settings()
 
 # Set weight matrices
-P_x = 20*np.eye(2)
+P_x = 15*np.eye(2)
 P_p = None # No parameter estimation so no need for weights on them
-P_v=np.array([[10]])
-P_w=np.diag(np.array([1,10]))
+P_v=np.array([[50]])
+P_w=np.diag(np.array([1,1]))
 mhe.set_default_objective(P_x,P_v,P_p,P_w)
 
 # Below are weights that have worked ok before (Px, Pp, Pv, Pw)
@@ -81,8 +82,8 @@ filename = os.path.join(dirname, 'measured_rotation.csv')
 data = pd.read_csv(filename)
 
 n_data = len(data)
-used_data_ratio = 0.3 # Ratio of total dataset used. Can use less data for debugging to reduce computation time
-time = data.iloc[:int(n_data*used_data_ratio), 0].values  # Time steps
+used_data_ratio = 0.2 # Ratio of total dataset used. Can use less data for debugging to reduce computation time
+#time_array = data.iloc[:int(n_data*used_data_ratio), 0].values  # Time steps
 theta_meas = data.iloc[:int(n_data*used_data_ratio), 1].values  # Measured rotation angle from offline dataset
 
 ########################## Run MHE  ###########################
@@ -92,19 +93,31 @@ x0_mhe=x0*(1+0.02*np.random.randn(1,1))
 mhe.x0 = x0_mhe
 mhe.set_initial_guess()
 
+step_runtimes=[]
 # Pass measurements into the MHE estimator
 y_meas_list = [] # for plotting gt
 for theta in theta_meas:
+    step_start=time.time()
     y_meas = np.array([[theta]])
     y_meas_list.append(theta)
     mhe.make_step(y_meas)  # Feed measurements into MHE
+    step_runtime=time.time()-step_start
+    step_runtimes.append(step_runtime)
 
 #Save the MHE data to a CSV file, Data columns: (0,1,y) = ("Theta est.", "Omega est.", "Thea meas.")
 data_x = pd.DataFrame(mhe.data["_x"]) 
 data_x["y"] = y_meas_list
 data_x.to_csv("mhe_states.csv", index=False)
 
+total_runtime=time.time() - start_time
 
+################### Performance #########################
+
+theta_est= mhe.data["_x"][:,0]
+
+errors = y_meas_list-theta_est
+MSE = np.mean(errors**2)
+MAE = np.mean(np.abs(errors))
 
 
 #################### Plotting ############################
@@ -136,5 +149,27 @@ mhe_graphics.reset_axes()
 ax[0].axvline(mhe.settings.t_step * mhe.settings.n_horizon)
 ax[1].axvline(mhe.settings.t_step * mhe.settings.n_horizon)
 
-# Show the figure:
+#Plotting performance indicators
+plt.figure()
+sns.histplot(errors, kde=True, bins=20, edgecolor="black")
+plt.ylabel("Frequency")
+plt.xlabel("Error")
+plt.title("Error distribution")
+textstr = f"MSE: {MSE:.3f}\nMAE: {MAE:.3f}"
+props = dict(boxstyle='round', facecolor='white', alpha=0.8, pad=0.5)  # Add padding
+plt.text(0.95, 0.95, textstr, transform=plt.gca().transAxes, fontsize=10,
+         verticalalignment='top', horizontalalignment='right', bbox=props)
+
+plt.figure()
+plt.plot(np.array(step_runtimes)*1000, label="Step Runtime", color="royalblue")
+plt.xlabel("Time step")
+plt.ylabel("Runtime [ms]")
+plt.title("MHE Step Runtimes")
+plt.legend(loc="upper right")
+textstr = f"Total Runtime: {total_runtime:.3f}"
+props = dict(boxstyle='round', facecolor='white', alpha=0.8, pad=0.5)  # Add padding
+plt.text(0.985, 0.9, textstr, transform=plt.gca().transAxes, fontsize=10,
+         verticalalignment='top', horizontalalignment='right', bbox=props)
+
+# Show the figures:
 plt.show()

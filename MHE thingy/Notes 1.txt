@@ -1,0 +1,28 @@
+Implement MSE, NEES or NIS.
+MSE: ok, calculate total after the run
+NEES and NIS is done each step. Need some kind of covariance matrices P and S? Can I use the mhe weight matrices? Not meaningful unless weight matrices accurately depict statistical uncertainty (covariance). In my case they're tuned heuristically for performance.
+Hedengreen (2006): Used normalized variance of model errors:	Var(y_measured - y_predicted) / Var(y_measured). Implement after run and do in total for alll data points
+
+Report:
+
+Theory: getting there + MSE/NEES/NIS
+Literature study: I dont know, should I do this? Isnt this kinda like theory part?
+Method:
+	Connecting and tuning the 3.0 maglev, different tests and their performance, how to evaluate performance, thought process behind 	tuning, centering bias, response etc.
+	MHE: info about the data set and problem and model, implementing MHE (do-mpc), review code, computation time/not use whole 	dataset. What comparisons will be made, what parameters will be tuned, how to compare (MSE, NEES, NIS)? [What to expect? 	(Should this be in methods?)]
+Results
+	Show results from comparisons
+	
+Disussion
+	Discuss results compared to our hypothesis, what went wrong, what can be done better, what assumptions or shortcuts were taken
+	What can be further developed
+Conclusion
+
+
+mean absolute error mae + distribution of errors histogram of errorz
+
+cite rest of projects papers (hans papers, 
+
+3.0 is now being replaced by 4.0
+
+look at other portion of data set (last 10% ?) 
