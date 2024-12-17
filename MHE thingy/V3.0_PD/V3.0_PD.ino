@@ -69,7 +69,7 @@ float biasY = 0.0872 , biasUY = 0.82;
 
 
 // PID
-double Kp = 700, Kd = 5; // 450,2 value for the double magnets, maybe not the best but it's stabilise, (800,2.6)
+double Kp = 700, Kd = 5; // 450,2 value for the double magnets, maybe not the best but it's stabilize, (800,2.6)
 double ux = 0, uy = 0;
 double ex = 0, ey = 0;
 double dex = 0, dey = 0;

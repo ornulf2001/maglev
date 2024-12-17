@@ -26,6 +26,15 @@ t_eval = np.linspace(0, 10, 1000)  # Time points where solution is evaluated
 sol = solve_ivp(mass_spring_damper, t_span, [x0, v0], t_eval=t_eval)
 
 # Plot the trajectory
+
+plt.rcParams.update({
+    'font.size': 14,            # General font size
+    'axes.titlesize': 14,       # Title font size
+    'axes.labelsize': 14,       # Axes label font size
+    'legend.fontsize': 13,      # Legend font size
+    'xtick.labelsize': 14,      # X-tick label font size
+    'ytick.labelsize': 14       # Y-tick label font size
+})
 plt.plot(sol.t, sol.y[0], label='Displacement (m)')
 plt.xlabel('Time (s)')
 plt.ylabel('Displacement (m)')
